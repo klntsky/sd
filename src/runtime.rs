@@ -104,3 +104,30 @@ impl Env for Runtime {
     }
 
 }
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+    use crate::shell::ShellString::*;
+    use crate::shell::StringComponent::*;
+
+    #[test]
+    fn test_runtime() {
+        let mut runtime = Runtime::initialize();
+
+        runtime.declare(
+            "foo".to_string(),
+            "bar".to_string()
+        );
+
+        let tmp = runtime.expand_string(WithInterpolation(vec![
+            StringLiteral("bar".to_string()),
+            VariableName("foo".to_string()), // expands to "bar"
+            StringLiteral("bruh".to_string()),
+            VariableName("blah".to_string()) // undefined, expands to ""
+        ]));
+
+        assert_eq!(tmp, "barbarbruh");
+    }
+}
