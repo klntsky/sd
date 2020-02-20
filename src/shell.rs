@@ -2,7 +2,7 @@ use combine::parser::char::{char};
 use combine::{between, choice, many1, parser, sep_by};
 use combine::stream::{Stream};
 use std::vec::*;
-use combine::parser::char::{spaces, string};
+use combine::parser::char::{spaces};
 use combine::{
     eof, many, none_of, one_of, attempt
 };
@@ -80,13 +80,15 @@ parser! {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ShellToken {
-    StringToken(ShellString),
+pub enum Token<Str>{
+    StringToken(Str),
     Pipe,
     Assign
 }
 
-use ShellToken::*;
+use Token::*;
+
+pub type ShellToken = Token<ShellString>;
 
 parser! {
     pub fn special_char[I]()(I) -> char
@@ -281,6 +283,19 @@ mod test {
             StringToken(
                 WithInterpolation(vec![
                     StringLiteral("echo".to_string())
+                ])
+            )
+        ], "");
+
+        check_parse("cat $FILE", vec![
+            StringToken(
+                WithInterpolation(vec![
+                    StringLiteral("cat".to_string())
+                ])
+            ),
+            StringToken(
+                WithInterpolation(vec![
+                    VariableName("FILE".to_string())
                 ])
             )
         ], "");

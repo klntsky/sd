@@ -3,3 +3,4 @@ pub mod runtime;
 pub mod runtime_mock;
 pub mod environment;
 pub mod command;
+pub mod expanded;
