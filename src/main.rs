@@ -3,7 +3,6 @@ use klntsky_1::command::*;
 
 use tokio::prelude::*;
 use futures::executor::block_on;
-extern crate rustyline;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use combine::{Parser, EasyParser};
