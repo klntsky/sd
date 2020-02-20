@@ -61,44 +61,44 @@ impl Env for Runtime {
 
     async fn interpret(&mut self, command : Command) -> &mut Self {
 
-        match command {
+        // match command {
 
-            CAT(filename) => {
-                let file = File::open(filename).await;
+        //     CAT(filename) => {
+        //         let file = File::open(filename).await;
 
-                match file {
-                    Err(_) => {
-                        self.stdin = "No such file".as_bytes().to_vec();
-                    }
+        //         match file {
+        //             Err(_) => {
+        //                 self.stdin = "No such file".as_bytes().to_vec();
+        //             }
 
-                    Ok(mut file) => {
-                        let mut str = String::new();
+        //             Ok(mut file) => {
+        //                 let mut str = String::new();
 
-                        match file.read_to_string(&mut str).await {
-                            Err(_) => {
-                                self.stdin = "Can't read file".as_bytes().to_vec();
-                            }
+        //                 match file.read_to_string(&mut str).await {
+        //                     Err(_) => {
+        //                         self.stdin = "Can't read file".as_bytes().to_vec();
+        //                     }
 
-                            Ok(_) => {
-                                self.stdin = str.as_bytes().to_vec();
-                            }
-                        }
-                    }
-                }
-            }
+        //                     Ok(_) => {
+        //                         self.stdin = str.as_bytes().to_vec();
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
 
-            ECHO(string) => {
-                self.stdin = string.as_bytes().to_vec();
-            }
+        //     ECHO(string) => {
+        //         self.stdin = string.as_bytes().to_vec();
+        //     }
 
-            WC(string) => {
-                self.stdin = "WC".as_bytes().to_vec();
-            }
+        //     WC(string) => {
+        //         self.stdin = "WC".as_bytes().to_vec();
+        //     }
 
-            PWD => {
-                self.stdin = "PWD".as_bytes().to_vec();
-            }
-        };
+        //     PWD => {
+        //         self.stdin = "PWD".as_bytes().to_vec();
+        //     }
+        // };
 
         self
     }

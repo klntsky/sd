@@ -13,12 +13,12 @@ use combine::{
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    CAT (String),
-    ECHO (String),
-    WC (String),
-    PWD
-    // EXIT,
-    // SET (String, String),
+    CAT (Vec<ShellString>),
+    ECHO (Vec<ShellString>),
+    WC (Vec<ShellString>),
+    PWD,
+    EXIT,
+    SET (String, String)
 }
 
 parser! {

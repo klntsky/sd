@@ -4,7 +4,7 @@ use combine::stream::{Stream};
 use std::vec::*;
 use combine::parser::char::{spaces, string};
 use combine::{
-    eof, many, none_of, one_of
+    eof, many, none_of, one_of, attempt
 };
 
 /// String component is either a `$variable` or just text.
@@ -73,8 +73,8 @@ parser! {
     {
         choice((
             quoted_string(),
-            fully_quoted_string().map(WithoutInterpolation),
-            unquoted_string().map(WithoutInterpolation)
+            fully_quoted_string(),
+            unquoted_string()
         ))
     }
 }
@@ -82,7 +82,8 @@ parser! {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ShellToken {
     StringToken(ShellString),
-    Pipe
+    Pipe,
+    Assign
 }
 
 use ShellToken::*;
@@ -139,7 +140,7 @@ parser! {
 }
 
 parser! {
-    pub fn fully_quoted_string[I]()(I) -> String
+    pub fn fully_quoted_string[I]()(I) -> ShellString
     where [I: Stream<Token = char>]
     {
         between(
@@ -152,17 +153,34 @@ parser! {
             )
         ).map(|chrs : Vec<char>|
               chrs.into_iter().collect()
+        ).map(WithoutInterpolation)
+    }
+}
+
+parser! {
+    pub fn string_unquoted_literal_component[I]()(I) -> StringComponent
+    where [I: Stream<Token = char>]
+    {
+        many1(
+            one_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890_-.,:".chars())
+        ).map(
+            |chrs : Vec<char>| {
+                StringLiteral(chrs.into_iter().collect())
+            }
         )
     }
 }
 
 parser! {
-    pub fn unquoted_string[I]()(I) -> String
+    pub fn unquoted_string[I]()(I) -> ShellString
     where [I: Stream<Token = char>]
     {
-        many1(one_of("abcdefghijklmnopqrstuvwxyz1234567890_-".chars())).map(
-            |chrs : Vec<char>| chrs.into_iter().collect()
-        )
+        many1(
+            choice((
+                attempt(string_unquoted_literal_component()),
+                attempt(variable_component())
+            ))
+        ).map(WithInterpolation)
     }
 }
 
@@ -172,10 +190,11 @@ parser! {
     {
         sep_by(
             choice((
-                string("|").map(|_| Pipe),
+                char('|').map(|_| Pipe),
+                char('=').map(|_| Assign),
                 shell_string().map(StringToken)
             )),
-            whitespace()
+            spaces()
         )
     }
 }
@@ -237,19 +256,40 @@ mod test {
 
         check_parse("|", vec![Pipe], "");
         check_parse("| |", vec![Pipe, Pipe], "");
+        check_parse("FILE=example.txt", vec![
+            StringToken(
+                WithInterpolation(vec![
+                    StringLiteral(
+                        "FILE".to_string()
+                    )
+                ])
+            ),
+            Assign,
+            StringToken(
+                WithInterpolation(vec![
+                    StringLiteral("example.txt".to_string())
+                ])
+            )
+        ], "");
 
         check_parse("echo echo", vec![
             StringToken(
-                WithoutInterpolation("echo".to_string())
+                WithInterpolation(vec![
+                    StringLiteral("echo".to_string())
+                ])
             ),
             StringToken(
-                WithoutInterpolation("echo".to_string())
+                WithInterpolation(vec![
+                    StringLiteral("echo".to_string())
+                ])
             )
         ], "");
 
         check_parse("echo \"asd\" | wc", vec![
             StringToken(
-                WithoutInterpolation("echo".to_string())
+                WithInterpolation(vec![
+                    StringLiteral("echo".to_string())
+                ])
             ),
             StringToken(
                 WithInterpolation(vec![
@@ -258,10 +298,10 @@ mod test {
             ),
             Pipe,
             StringToken(
-                WithoutInterpolation(
-                    "wc".to_string()
-                )
-            )
+                WithInterpolation(vec![
+                    StringLiteral("wc".to_string())
+                ])
+            ),
         ], "");
    }
 }
