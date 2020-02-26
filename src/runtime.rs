@@ -8,24 +8,24 @@ use std::io::Read;
 use std::process;
 use async_trait::async_trait;
 use rustyline::Editor;
+use rustyline::error::ReadlineError;
 use std::env::{current_dir};
 
 /// Runtime that represents real-world
 pub struct Runtime<'a> {
     pub env : HashMap<String, String>,
     pub stdin : Vec<u8>,
-    pub readline : &'a mut Editor::<()>
+    pub editor : &'a mut Editor::<()>
 }
 
 #[async_trait]
 impl Env for Runtime<'_> {
 
-    fn initialize <'b> () -> Runtime<'b> {
-        Runtime {
-            env: HashMap::new(),
-            stdin: vec![],
-            readline: &mut Editor::<()>::new()
-        }
+    fn getline (&mut self) -> Result<String, ReadlineError> {
+        self.editor.readline("$ ").map(|line| {
+            self.editor.add_history_entry(line.clone().as_str());
+            line
+        })
     }
 
     fn clear_stdin(&mut self) {
@@ -38,9 +38,8 @@ impl Env for Runtime<'_> {
         }
     }
 
-    fn declare(&mut self, var : String, value : String) -> &mut Self {
+    fn declare(&mut self, var : String, value : String) -> () {
         self.env.insert(var, value);
-        self
     }
 
     fn lookup_variable(&self, variable : String) -> Option<String> {
@@ -81,21 +80,17 @@ impl Env for Runtime<'_> {
             }
 
             ECHO(strings) => {
-                let mut tmp : String = String::new();
-
-                for string in strings.iter() {
-                    tmp.push_str(string);
-                    tmp.push_str(" ");
-                }
-
-                self.stdin = tmp.as_bytes().to_vec();
+                self.stdin = strings.iter().fold(
+                    "".to_string(),
+                    |accum, s| accum + &s + " "
+                ).as_bytes().to_vec();
             }
 
             WC (filenames) => {
 
                 // Count lines, words and bytes, using ASCII byte codes
                 fn get_stats(contents : &Vec<u8>) -> (u64, u64, u64) {
-                    let mut lines : u64 = 0;
+                    let mut lines : u64 = 1;
                     let mut words : u64 = 0;
                     let mut bytes : u64 = 0;
 
@@ -235,7 +230,11 @@ mod test {
 
     #[test]
     fn test_runtime() {
-        let mut runtime = Runtime::initialize();
+        let mut runtime = Runtime {
+            env: HashMap::new(),
+            stdin: vec![],
+            editor: &mut Editor::<()>::new()
+        };
 
         runtime.declare(
             "foo".to_string(),

@@ -1,11 +1,8 @@
 use combine::parser::char::{char};
-use combine::{between, choice, many1, parser, sep_end_by};
+use combine::{eof, many, none_of, one_of, attempt, between, choice, many1, parser, sep_end_by};
 use combine::stream::{Stream};
 use std::vec::*;
 use combine::parser::char::{spaces};
-use combine::{
-    eof, many, none_of, one_of, attempt
-};
 use std::fmt;
 
 /// String component is either a `$variable` or just text.
@@ -264,11 +261,9 @@ mod test {
             assert_eq!(val, expected);
         }
 
-        // Note: no spaces at the end allowed here
-        // `shell_token_parser` is responsible for them
-
         check_parse("|", vec![Pipe], "");
         check_parse("| |", vec![Pipe, Pipe], "");
+        check_parse("| |  ", vec![Pipe, Pipe], "");
         check_parse("FILE=example.txt", vec![
             StringToken(
                 WithInterpolation(vec![

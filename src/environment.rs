@@ -5,12 +5,11 @@ use rustyline::error::ReadlineError;
 
 #[async_trait]
 pub trait Env {
-    fn initialize() -> Self;
     fn clear_stdin(&mut self) -> ();
     fn print(&mut self, value: String) -> ();
-    fn declare(&mut self, var : String, value : String) -> &mut Self;
+    fn declare(&mut self, var : String, value : String);
     fn lookup_variable(&self, variable : String) -> Option<String>;
-    fn readline (&self) -> Result<String, ReadlineError>;
+    fn getline (&mut self) -> Result<String, ReadlineError>;
     fn expand_string (
         &self,
         ss : ShellString
@@ -73,5 +72,5 @@ pub trait Env {
         }
     }
 
-    async fn interpret_command(&mut self, command : Command) -> ();
+    async fn interpret_command(&mut self, command : Command);
 }

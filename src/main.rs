@@ -3,6 +3,7 @@ use klntsky_1::command::*;
 use klntsky_1::runtime::*;
 use klntsky_1::environment::*;
 
+use std::collections::HashMap;
 use futures::executor::block_on;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -15,16 +16,12 @@ use combine::{
     EasyParser,
 };
 
-async fn run_main (rt : &mut Runtime) {
-
-    let mut rl = Editor::<()>::new();
+async fn run_main (rt : &mut Runtime<'_>) {
 
     loop {
-        match rl.readline("$ ") {
+        match rt.getline() {
 
             Ok(line) => {
-                rl.add_history_entry(line.clone().as_str());
-
                 let result = shell_token_parser()
                     .easy_parse(position::Stream::new(&*line))
                     .map_err(|err| err.map_range(|s| s.to_string()));
@@ -80,7 +77,11 @@ async fn run_main (rt : &mut Runtime) {
 }
 
 fn main() {
-    let mut rt = Runtime::initialize();
+    let mut runtime = Runtime {
+        env: HashMap::new(),
+        stdin: vec![],
+        editor: &mut Editor::<()>::new()
+    };
 
-    block_on(run_main(&mut rt));
+    block_on(run_main(&mut runtime));
 }
