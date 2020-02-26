@@ -3,11 +3,10 @@ use klntsky_1::command::*;
 use klntsky_1::runtime::*;
 use klntsky_1::environment::*;
 
-use tokio::prelude::*;
 use futures::executor::block_on;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
-use combine::{Parser, EasyParser};
+use combine::{EasyParser};
 use combine::stream::position;
 
 #[cfg(feature = "std")]
@@ -16,19 +15,13 @@ use combine::{
     EasyParser,
 };
 
-async fn run_main () -> io::Result<()> {
+async fn run_main (rt : &mut Runtime) {
 
     let mut rl = Editor::<()>::new();
 
-    if rl.load_history("history.txt").is_err() {
-        println!("No previous history.");
-    }
-
-    let mut rt = Runtime::initialize();
-
     loop {
-        let readline = rl.readline(">> ");
-        match readline {
+        match rl.readline("$ ") {
+
             Ok(line) => {
                 rl.add_history_entry(line.clone().as_str());
 
@@ -36,57 +29,45 @@ async fn run_main () -> io::Result<()> {
                     .easy_parse(position::Stream::new(&*line))
                     .map_err(|err| err.map_range(|s| s.to_string()));
 
-
                 match result {
                     Ok((tokens, _)) => {
-                        // println!("{:?}", tokens.clone());
 
                         let expanded = rt.expand_command(tokens);
                         let result = commands_parser().easy_parse(&expanded[..]);
 
-                        match result {
-                            Ok((commands, _)) => {
+                        match result.ok() {
+                            Some((commands, _)) => {
 
-                                for command in commands.iter() {
-                                    rt.interpret(command.clone()).await;
+                                rt.interpret(commands).await;
+
+                                match String::from_utf8(rt.stdin.clone()).ok() {
+                                    Some(str) => rt.print(str),
+                                    None => rt.print(
+                                        "Output can't be decoded as utf-8.".to_string()
+                                    )
                                 }
 
-                                // println!("{:?}", commands.clone());
-                                let output = String::from_utf8(rt.stdin.clone());
-
-                                match output {
-                                    Ok(str) =>
-                                        rt.print(str),
-                                    Err(_) =>
-                                        rt.print(
-                                            "Command output can't be decoded as utf-8.".to_string()
-                                        )
-                                }
-
-                                rt.clean_stdin();
+                                rt.clear_stdin();
                             }
 
-                            Err(err) => {
-                                println!("No parse!");
-                                println!("{:?}", err);
+                            None => {
+                                rt.print("No parse!".to_string());
                             }
                         }
                     }
 
-                    Err(err) => {
-                        println!("No parse!");
-                        println!("{:?}", err);
+                    Err(_err) => {
+                        rt.print("No parse!".to_string());
                     }
                 }
             },
 
             Err(ReadlineError::Interrupted) => {
-                println!("CTRL-C");
+                println!("Bye!");
                 break
             },
 
             Err(ReadlineError::Eof) => {
-                println!("CTRL-D");
                 break
             },
 
@@ -95,11 +76,11 @@ async fn run_main () -> io::Result<()> {
                 break
             }
         }
-    }
-
-    Ok(())
+    };
 }
 
 fn main() {
-    block_on(run_main());
+    let mut rt = Runtime::initialize();
+
+    block_on(run_main(&mut rt));
 }

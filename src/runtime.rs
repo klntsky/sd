@@ -1,35 +1,40 @@
 use crate::environment::*;
 use crate::command::*;
-use crate::shell::*;
+use std::process::Stdio;
 use crate::command::Command::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::process;
 use async_trait::async_trait;
+use rustyline::Editor;
+use std::env::{current_dir};
 
 /// Runtime that represents real-world
-pub struct Runtime {
+pub struct Runtime<'a> {
     pub env : HashMap<String, String>,
-    pub stdin : Vec<u8>
+    pub stdin : Vec<u8>,
+    pub readline : &'a mut Editor::<()>
 }
 
 #[async_trait]
-impl Env for Runtime {
-    fn initialize () -> Runtime {
+impl Env for Runtime<'_> {
+
+    fn initialize <'b> () -> Runtime<'b> {
         Runtime {
             env: HashMap::new(),
-            stdin: vec![]
+            stdin: vec![],
+            readline: &mut Editor::<()>::new()
         }
     }
 
-    fn clean_stdin(&mut self) {
+    fn clear_stdin(&mut self) {
         self.stdin = vec![];
     }
 
     fn print(&mut self, value : String) {
         if value.len() > 0 {
-            println!("{}", value);
+            print!("{}", value);
         }
     }
 
@@ -38,38 +43,12 @@ impl Env for Runtime {
         self
     }
 
-    fn expand_string (&self, ss : ShellString) -> String {
-        match ss {
-            ShellString::WithoutInterpolation(literal) => {
-                literal
-            }
-
-            ShellString::WithInterpolation(vec) => {
-                let mut tmp = String::new();
-
-                for component in vec.iter() {
-                    match component {
-                        StringComponent::StringLiteral(literal) => {
-                            tmp.push_str(literal);
-                        }
-
-                        StringComponent::VariableName(variable) => {
-                            match self.env.get(variable) {
-                                Some(value) => {
-                                    tmp.push_str(value);
-                                }
-                                None => ()
-                            }
-                        }
-                    }
-                }
-
-                tmp
-            }
-        }
+    fn lookup_variable(&self, variable : String) -> Option<String> {
+        self.env.get(&variable).map(|x| x.clone())
     }
 
-    async fn interpret(&mut self, command : Command) -> () {
+
+    async fn interpret_command(&mut self, command : Command) -> () {
         match command {
 
             CAT(filenames) => {
@@ -116,17 +95,17 @@ impl Env for Runtime {
 
                 // Count lines, words and bytes, using ASCII byte codes
                 fn get_stats(contents : &Vec<u8>) -> (u64, u64, u64) {
-                    let mut words : u64 = 0;
                     let mut lines : u64 = 0;
+                    let mut words : u64 = 0;
                     let mut bytes : u64 = 0;
 
                     for byte in contents.iter() {
-                        if *byte == 32 {
-                            words += 1;
+                        if *byte == 10 {
+                            lines += 1;
                         }
 
-                        if *byte == 13 {
-                            lines += 1;
+                        if *byte == 32 {
+                            words += 1;
                         }
 
                         bytes += 1;
@@ -167,7 +146,7 @@ impl Env for Runtime {
                     return;
                 }
 
-                self.clean_stdin();
+                self.clear_stdin();
 
                 for filename in filenames.iter() {
                     let file = File::open(filename);
@@ -206,7 +185,12 @@ impl Env for Runtime {
             }
 
             PWD => {
-                self.stdin = "PWD".as_bytes().to_vec();
+                self.clear_stdin();
+
+                current_dir().ok()
+                    .and_then(|dir| dir.to_str().map(|dir_str| {
+                        self.stdin = (*dir_str).as_bytes().to_vec();
+                    }));
             }
 
             EXIT => {
@@ -218,11 +202,28 @@ impl Env for Runtime {
             }
 
             EXTERNAL (commands) => {
+                if let Some((binary_name, args)) = commands.split_first() {
+                    let result = std::process::Command::new(
+                        binary_name
+                    ).args(args).stderr(Stdio::piped()).output();
 
+                    match result {
+                        Ok(output) => {
+                            self.stdin = output.stdout;
+                            self.stdin.extend(output.stderr);
+                        },
+
+                        _ => {
+                            self.stdin = (
+                                "No such command: ".to_string() +
+                                    binary_name
+                            ).as_bytes().to_vec();
+                        }
+                    }
+                }
             }
-        };
+        }
     }
-
 }
 
 #[cfg(test)]

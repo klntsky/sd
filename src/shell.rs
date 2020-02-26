@@ -1,12 +1,11 @@
 use combine::parser::char::{char};
-use combine::{between, choice, many1, parser, sep_by};
+use combine::{between, choice, many1, parser, sep_end_by};
 use combine::stream::{Stream};
 use std::vec::*;
 use combine::parser::char::{spaces};
 use combine::{
     eof, many, none_of, one_of, attempt
 };
-use std::string::{ToString};
 use std::fmt;
 
 /// String component is either a `$variable` or just text.
@@ -108,6 +107,8 @@ parser! {
             char('\\'),
             char('"'),
             char('$'),
+            char('n').map(|_| '\n'),
+            char('r').map(|_| '\r')
         ))
     }
 }
@@ -174,7 +175,7 @@ parser! {
     where [I: Stream<Token = char>]
     {
         many1(
-            one_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890_-.,:".chars())
+            one_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@%^&*()_+-{}[];:<>,./?".chars())
         ).map(
             |chrs : Vec<char>| {
                 StringLiteral(chrs.into_iter().collect())
@@ -200,7 +201,7 @@ parser! {
     pub fn shell_token_parser_impl[I]()(I) -> Vec<ShellToken>
     where [I: Stream<Token = char>]
     {
-        sep_by(
+        sep_end_by(
             choice((
                 char('|').map(|_| Pipe),
                 char('=').map(|_| Assign),
@@ -215,7 +216,7 @@ parser! {
     pub fn shell_token_parser[I]()(I) -> Vec<ShellToken>
     where [I: Stream<Token = char>]
     {
-        shell_token_parser_impl().skip(spaces()).skip(eof())
+        shell_token_parser_impl().skip(eof())
     }
 }
 
