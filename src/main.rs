@@ -1,5 +1,7 @@
 use klntsky_1::shell::*;
 use klntsky_1::command::*;
+use klntsky_1::runtime::*;
+use klntsky_1::environment::*;
 
 use tokio::prelude::*;
 use futures::executor::block_on;
@@ -22,6 +24,8 @@ async fn run_main () -> io::Result<()> {
         println!("No previous history.");
     }
 
+    let mut rt = Runtime::initialize();
+
     loop {
         let readline = rl.readline(">> ");
         match readline {
@@ -32,9 +36,41 @@ async fn run_main () -> io::Result<()> {
                     .easy_parse(position::Stream::new(&*line))
                     .map_err(|err| err.map_range(|s| s.to_string()));
 
+
                 match result {
                     Ok((tokens, _)) => {
-                        println!("{:?}", tokens);
+                        // println!("{:?}", tokens.clone());
+
+                        let expanded = rt.expand_command(tokens);
+                        let result = commands_parser().easy_parse(&expanded[..]);
+
+                        match result {
+                            Ok((commands, _)) => {
+
+                                for command in commands.iter() {
+                                    rt.interpret(command.clone()).await;
+                                }
+
+                                // println!("{:?}", commands.clone());
+                                let output = String::from_utf8(rt.stdin.clone());
+
+                                match output {
+                                    Ok(str) =>
+                                        rt.print(str),
+                                    Err(_) =>
+                                        rt.print(
+                                            "Command output can't be decoded as utf-8.".to_string()
+                                        )
+                                }
+
+                                rt.clean_stdin();
+                            }
+
+                            Err(err) => {
+                                println!("No parse!");
+                                println!("{:?}", err);
+                            }
+                        }
                     }
 
                     Err(err) => {
@@ -65,7 +101,5 @@ async fn run_main () -> io::Result<()> {
 }
 
 fn main() {
-    println!("{:?}", shell_token_parser().parse("||||"));
-
     block_on(run_main());
 }

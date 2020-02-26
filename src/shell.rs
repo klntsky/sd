@@ -6,6 +6,8 @@ use combine::parser::char::{spaces};
 use combine::{
     eof, many, none_of, one_of, attempt
 };
+use std::string::{ToString};
+use std::fmt;
 
 /// String component is either a `$variable` or just text.
 #[derive(Debug, PartialEq, Clone)]
@@ -79,6 +81,7 @@ parser! {
     }
 }
 
+/// Token object parametrized by underlying stgin type (ShellString for non-expanded strings or String for expanded).
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token<Str>{
     StringToken(Str),
@@ -86,9 +89,16 @@ pub enum Token<Str>{
     Assign
 }
 
+impl fmt::Display for Token<String> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
 use Token::*;
 
 pub type ShellToken = Token<ShellString>;
+pub type ExpandedShellToken = Token<String>;
 
 parser! {
     pub fn special_char[I]()(I) -> char

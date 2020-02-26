@@ -3,9 +3,9 @@ use crate::command::*;
 use crate::shell::*;
 use crate::command::Command::*;
 use std::collections::HashMap;
-
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use std::fs::File;
+use std::io::Read;
+use std::process;
 use async_trait::async_trait;
 
 /// Runtime that represents real-world
@@ -20,6 +20,16 @@ impl Env for Runtime {
         Runtime {
             env: HashMap::new(),
             stdin: vec![]
+        }
+    }
+
+    fn clean_stdin(&mut self) {
+        self.stdin = vec![];
+    }
+
+    fn print(&mut self, value : String) {
+        if value.len() > 0 {
+            println!("{}", value);
         }
     }
 
@@ -59,48 +69,158 @@ impl Env for Runtime {
         }
     }
 
-    async fn interpret(&mut self, command : Command) -> &mut Self {
+    async fn interpret(&mut self, command : Command) -> () {
+        match command {
 
-        // match command {
+            CAT(filenames) => {
 
-        //     CAT(filename) => {
-        //         let file = File::open(filename).await;
+                for filename in filenames.iter() {
+                    let file = File::open(filename);
 
-        //         match file {
-        //             Err(_) => {
-        //                 self.stdin = "No such file".as_bytes().to_vec();
-        //             }
+                    match file {
+                        Err(_) => {
+                            self.stdin = (
+                                "No such file: ".to_string() + filename
+                            ).as_bytes().to_vec();
+                        }
 
-        //             Ok(mut file) => {
-        //                 let mut str = String::new();
+                        Ok(mut file) => {
+                            let mut str = String::new();
 
-        //                 match file.read_to_string(&mut str).await {
-        //                     Err(_) => {
-        //                         self.stdin = "Can't read file".as_bytes().to_vec();
-        //                     }
+                            match file.read_to_string(&mut str) {
+                                Err(_) => {
+                                    self.stdin.extend("Can't read file".as_bytes().to_vec());
+                                }
 
-        //                     Ok(_) => {
-        //                         self.stdin = str.as_bytes().to_vec();
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     }
+                                Ok(_) => {
+                                    self.stdin.extend(str.as_bytes().to_vec());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
-        //     ECHO(string) => {
-        //         self.stdin = string.as_bytes().to_vec();
-        //     }
+            ECHO(strings) => {
+                let mut tmp : String = String::new();
 
-        //     WC(string) => {
-        //         self.stdin = "WC".as_bytes().to_vec();
-        //     }
+                for string in strings.iter() {
+                    tmp.push_str(string);
+                    tmp.push_str(" ");
+                }
 
-        //     PWD => {
-        //         self.stdin = "PWD".as_bytes().to_vec();
-        //     }
-        // };
+                self.stdin = tmp.as_bytes().to_vec();
+            }
 
-        self
+            WC (filenames) => {
+
+                // Count lines, words and bytes, using ASCII byte codes
+                fn get_stats(contents : &Vec<u8>) -> (u64, u64, u64) {
+                    let mut words : u64 = 0;
+                    let mut lines : u64 = 0;
+                    let mut bytes : u64 = 0;
+
+                    for byte in contents.iter() {
+                        if *byte == 32 {
+                            words += 1;
+                        }
+
+                        if *byte == 13 {
+                            lines += 1;
+                        }
+
+                        bytes += 1;
+                    }
+
+                    (lines, words, bytes)
+                }
+
+                // Pretty-print stats, include file names if needed
+                let pprint_stats = |(lines, words, bytes) : (u64, u64, u64), filename : String| -> String {
+
+                    let mut output = String::new();
+                    output.push_str("\t");
+                    output.push_str(&lines.to_string());
+                    output.push_str("\t");
+                    output.push_str(&words.to_string());
+                    output.push_str("\t");
+                    output.push_str(&bytes.to_string());
+
+                    if filenames.len() > 1 {
+                        output.push_str("\t");
+                        output.push_str(&filename);
+                    }
+
+                    output.push_str("\n");
+
+                    output
+                };
+
+
+                if filenames.len() == 0 {
+                    let stats = pprint_stats(
+                        get_stats(&self.stdin), "".to_string()
+                    );
+
+                    self.stdin = stats.as_bytes().to_vec();
+
+                    return;
+                }
+
+                self.clean_stdin();
+
+                for filename in filenames.iter() {
+                    let file = File::open(filename);
+
+                    match file {
+                        Err(_) => {
+                            self.stdin.extend((
+                                "wc: No such file: ".to_string() +
+                                    filename +
+                                    &"\n".to_string()
+                            ).as_bytes().to_vec());
+                        }
+
+                        Ok(mut file) => {
+                            let mut contents = vec![];
+
+                            match file.read_to_end(&mut contents) {
+                                Err(_) => {
+                                    self.stdin.extend(
+                                        "Can't read file".as_bytes().to_vec()
+                                    );
+                                }
+
+                                Ok(_) => {
+                                    let stats = get_stats(&contents);
+                                    self.stdin.extend(
+                                        pprint_stats(
+                                            stats, filename.to_string()
+                                        ).as_bytes().to_vec()
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            PWD => {
+                self.stdin = "PWD".as_bytes().to_vec();
+            }
+
+            EXIT => {
+                process::exit(0);
+            }
+
+            SET (variable, value) => {
+                self.env.insert(variable, value);
+            }
+
+            EXTERNAL (commands) => {
+
+            }
+        };
     }
 
 }
