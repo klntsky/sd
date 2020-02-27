@@ -97,8 +97,8 @@ impl Env for Runtime<'_> {
                     let mut bytes : u64 = 0;
 
                     for byte in contents.iter() {
-                        println!("{}", byte.to_string());
                         if *byte == 10 {
+                            word = false;
                             lines += 1;
                         }
 
@@ -233,9 +233,10 @@ mod test {
     use super::*;
     use crate::shell::ShellString::*;
     use crate::shell::StringComponent::*;
+    use futures::executor::block_on;
 
     #[test]
-    fn test_runtime() {
+    fn test_runtime_string_interpolation() {
         let mut runtime = Runtime {
             env: HashMap::new(),
             stdin: vec![],
@@ -255,5 +256,48 @@ mod test {
         ]));
 
         assert_eq!(tmp, "barbarbruh");
+    }
+
+    #[test]
+    fn test_runtime_echo_wc() {
+
+        let mut runtime = Runtime {
+            env: HashMap::new(),
+            stdin: vec![],
+            editor: &mut Editor::<()>::new()
+        };
+
+        block_on(runtime.interpret_command(
+            Command::ECHO(vec![
+                "a".to_string(),
+                "a".to_string()
+            ])
+        ));
+
+        assert_eq!(runtime.stdin.len(), 3);
+
+        block_on(runtime.interpret_command(
+            Command::WC(vec![])
+        ));
+
+        assert_eq!(
+            String::from_utf8(runtime.stdin.clone()).unwrap(),
+            "\t1\t2\t3\n".to_string()
+        );
+
+        block_on(runtime.interpret_command(
+            Command::ECHO(vec![
+                "a\n b".to_string(),
+            ])
+        ));
+
+        block_on(runtime.interpret_command(
+            Command::WC(vec![])
+        ));
+
+        assert_eq!(
+            String::from_utf8(runtime.stdin.clone()).unwrap(),
+            "\t2\t2\t4\n".to_string()
+        );
     }
 }
