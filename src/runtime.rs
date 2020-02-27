@@ -84,6 +84,7 @@ impl Env for Runtime<'_> {
                     "".to_string(),
                     |accum, s| accum + &s + " "
                 ).as_bytes().to_vec();
+                self.stdin.pop();
             }
 
             WC (filenames) => {
@@ -91,16 +92,21 @@ impl Env for Runtime<'_> {
                 // Count lines, words and bytes, using ASCII byte codes
                 fn get_stats(contents : &Vec<u8>) -> (u64, u64, u64) {
                     let mut lines : u64 = 1;
-                    let mut words : u64 = 0;
+                    let mut words : u64 = if contents.len() > 0 { 1 } else { 0 };
+                    let mut word = true;
                     let mut bytes : u64 = 0;
 
                     for byte in contents.iter() {
+                        println!("{}", byte.to_string());
                         if *byte == 10 {
                             lines += 1;
                         }
 
-                        if *byte == 32 {
+                        if *byte == 32 && word {
                             words += 1;
+                            word = false;
+                        } else {
+                            word = true;
                         }
 
                         bytes += 1;

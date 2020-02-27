@@ -122,13 +122,26 @@ parser! {
 }
 
 parser! {
+    pub fn fully_quoted_special_char[I]()(I) -> char
+    where [I: Stream<Token = char>]
+    {
+        choice((
+            char('\\'),
+            char('\''),
+            char('n').map(|_| '\n'),
+            char('r').map(|_| '\r')
+        ))
+    }
+}
+
+parser! {
     pub fn fully_quoted_escape_sequence[I]()(I) -> char
     where [I: Stream<Token = char>]
     {
         (
             char('\\'),
-            char('\'')
-        ).map(|(_, _)| '\'')
+            fully_quoted_special_char()
+        ).map(|(_, c)| c)
     }
 }
 
@@ -172,7 +185,7 @@ parser! {
     where [I: Stream<Token = char>]
     {
         many1(
-            one_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890!@%^&*()_+-{}[];:<>,./?".chars())
+            none_of("$'\"=| ".chars())
         ).map(
             |chrs : Vec<char>| {
                 StringLiteral(chrs.into_iter().collect())
