@@ -228,6 +228,7 @@ impl Env for Runtime<'_> {
 
                     // construct a reader handle
                     let mb_reader_handle = cmd(binary_name, args)
+                        .full_env(&env_map)
                         .stdin_bytes(self.stdin.clone())
                         .stderr_to_stdout()
                         .reader();
