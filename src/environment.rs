@@ -67,10 +67,14 @@ pub trait Env {
         &mut self,
         commands : Vec<Command>
     ) -> () {
+        let mut i : usize = 0;
+
         for command in commands.iter() {
-            self.interpret_command(command.clone()).await;
+            let is_last : bool = i == commands.len() - 1;
+            self.interpret_command(command.clone(), is_last).await;
+            i += 1;
         }
     }
 
-    async fn interpret_command(&mut self, command : Command);
+    async fn interpret_command(&mut self, command : Command, is_last : bool);
 }

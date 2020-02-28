@@ -1,6 +1,5 @@
 use crate::environment::*;
 use crate::command::*;
-use std::process::Stdio;
 use crate::command::Command::*;
 use std::collections::HashMap;
 use std::fs::File;
@@ -10,12 +9,21 @@ use async_trait::async_trait;
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
 use std::env::{current_dir};
+use std::io::{BufRead,BufReader};
+use duct::cmd;
 
 /// Runtime that represents real-world
 pub struct Runtime<'a> {
     pub env : HashMap<String, String>,
     pub stdin : Vec<u8>,
-    pub editor : &'a mut Editor::<()>
+    pub editor : &'a mut Editor::<()>,
+    /// This flag is used to implement streaming from external commands.
+    /// We set it to false when dealing with external commands, and to
+    /// true otherwise.
+    /// If the output comes from some external command, we stream it
+    /// line-by-line directly to stdout, and then our "shell" should not print it
+    /// twice when program exits. This flag is used to prevent output duplication.
+    pub should_print : bool
 }
 
 #[async_trait]
@@ -46,20 +54,22 @@ impl Env for Runtime<'_> {
         self.env.get(&variable).map(|x| x.clone())
     }
 
+    async fn interpret_command(&mut self, command : Command, is_last : bool) -> () {
+        self.should_print = true;
 
-    async fn interpret_command(&mut self, command : Command) -> () {
         match command {
 
             CAT(filenames) => {
+                self.clear_stdin();
 
                 for filename in filenames.iter() {
                     let file = File::open(filename);
 
                     match file {
                         Err(_) => {
-                            self.stdin = (
-                                "No such file: ".to_string() + filename
-                            ).as_bytes().to_vec();
+                            self.stdin.extend((
+                                "No such file: ".to_string() + filename + "\n"
+                            ).as_bytes().to_vec());
                         }
 
                         Ok(mut file) => {
@@ -67,7 +77,7 @@ impl Env for Runtime<'_> {
 
                             match file.read_to_string(&mut str) {
                                 Err(_) => {
-                                    self.stdin.extend("Can't read file".as_bytes().to_vec());
+                                    self.stdin.extend("Can't read file\n".as_bytes().to_vec());
                                 }
 
                                 Ok(_) => {
@@ -199,20 +209,52 @@ impl Env for Runtime<'_> {
             }
 
             SET (variable, value) => {
+                self.clear_stdin();
                 self.env.insert(variable, value);
             }
 
             EXTERNAL (commands) => {
-                if let Some((binary_name, args)) = commands.split_first() {
-                    let result = std::process::Command::new(
-                        binary_name
-                    ).args(args).stderr(Stdio::piped()).output();
+                self.should_print = false;
 
-                    match result {
-                        Ok(output) => {
-                            self.stdin = output.stdout;
-                            self.stdin.extend(output.stderr);
-                        },
+                if let Some((binary_name, args)) = commands.split_first() {
+
+                    // Construct a new environment for child process
+                    let mut env_map: HashMap<String, String> =
+                        std::env::vars().collect();
+
+                    for (key, value) in self.env.iter() {
+                        env_map.insert(key.into(), value.into());
+                    }
+
+                    // construct a reader handle
+                    let mb_reader_handle = cmd(binary_name, args)
+                        .stdin_bytes(self.stdin.clone())
+                        .stderr_to_stdout()
+                        .reader();
+
+                    self.clear_stdin();
+
+                    match mb_reader_handle {
+                        Ok(reader_handle) => {
+                            let lines = BufReader::new(reader_handle).lines();
+
+                            // Read everything line-by-line, printing directly
+                            // to stdout if needed.
+                            for mb_line in lines {
+                                if let Ok(line) = mb_line {
+
+                                    self.stdin.extend(line.as_bytes().to_vec());
+                                    self.stdin.extend("\n".as_bytes().to_vec());
+
+                                    if is_last {
+                                        println!("{}", line);
+                                    }
+
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
 
                         _ => {
                             self.stdin = (
@@ -221,6 +263,8 @@ impl Env for Runtime<'_> {
                             ).as_bytes().to_vec();
                         }
                     }
+                } else {
+                    self.clear_stdin();
                 }
             }
         }
@@ -240,7 +284,8 @@ mod test {
         let mut runtime = Runtime {
             env: HashMap::new(),
             stdin: vec![],
-            editor: &mut Editor::<()>::new()
+            editor: &mut Editor::<()>::new(),
+            should_print: true
         };
 
         runtime.declare(
@@ -264,20 +309,23 @@ mod test {
         let mut runtime = Runtime {
             env: HashMap::new(),
             stdin: vec![],
-            editor: &mut Editor::<()>::new()
+            editor: &mut Editor::<()>::new(),
+            should_print: true
         };
 
         block_on(runtime.interpret_command(
             Command::ECHO(vec![
                 "a".to_string(),
                 "a".to_string()
-            ])
+            ]),
+            false
         ));
 
         assert_eq!(runtime.stdin.len(), 3);
 
         block_on(runtime.interpret_command(
-            Command::WC(vec![])
+            Command::WC(vec![]),
+            false
         ));
 
         assert_eq!(
@@ -288,11 +336,12 @@ mod test {
         block_on(runtime.interpret_command(
             Command::ECHO(vec![
                 "a\n b".to_string(),
-            ])
+            ]),
+            false
         ));
 
         block_on(runtime.interpret_command(
-            Command::WC(vec![])
+            Command::WC(vec![]), false
         ));
 
         assert_eq!(

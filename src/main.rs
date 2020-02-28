@@ -37,11 +37,13 @@ async fn run_main (rt : &mut Runtime<'_>) {
 
                                 rt.interpret(commands).await;
 
-                                match String::from_utf8(rt.stdin.clone()).ok() {
-                                    Some(str) => rt.print(str),
-                                    None => rt.print(
-                                        "Output can't be decoded as utf-8.".to_string()
-                                    )
+                                if rt.should_print {
+                                    match String::from_utf8(rt.stdin.clone()).ok() {
+                                        Some(str) => rt.print(str),
+                                        None => rt.print(
+                                            "Output can't be decoded as utf-8.".to_string()
+                                        )
+                                    }
                                 }
 
                                 rt.clear_stdin();
@@ -80,7 +82,8 @@ fn main() {
     let mut runtime = Runtime {
         env: HashMap::new(),
         stdin: vec![],
-        editor: &mut Editor::<()>::new()
+        editor: &mut Editor::<()>::new(),
+        should_print: true
     };
 
     block_on(run_main(&mut runtime));
