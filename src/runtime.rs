@@ -258,6 +258,7 @@ impl Env for Runtime<'_> {
                         }
 
                         _ => {
+                            self.should_print = true;
                             self.stdin = (
                                 "No such command: ".to_string() +
                                     binary_name
