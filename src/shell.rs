@@ -211,13 +211,15 @@ parser! {
     pub fn shell_token_parser_impl[I]()(I) -> Vec<ShellToken>
     where [I: Stream<Token = char>]
     {
-        sep_end_by(
-            choice((
-                char('|').map(|_| Pipe),
-                char('=').map(|_| Assign),
-                shell_string().map(StringToken)
-            )),
-            spaces()
+        spaces().with(
+            sep_end_by(
+                choice((
+                    char('|').map(|_| Pipe),
+                    char('=').map(|_| Assign),
+                    shell_string().map(StringToken)
+                )),
+                spaces()
+            )
         )
     }
 }
