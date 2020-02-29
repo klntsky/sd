@@ -1,0 +1,12 @@
+[package]
+name = "klntsky-1"
+version = "0.1.0"
+authors = ["klntsky <klntsky@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+futures = "0.3.4"
+rustyline = "6.0.0"
+combine = "4.0.1"
+async-trait = "0.1.24"
+duct = "0.13.3"
