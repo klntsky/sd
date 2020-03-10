@@ -274,6 +274,7 @@ impl Env for Runtime<'_> {
             GREP (raw_args) => {
                 const ARG_CASE_INSENSITIVE: &[&str] = &["-i"];
                 const ARG_WHOLE_WORDS: &[&str] = &["-w"];
+                const ARG_LINES_AFTER: &[&str] = &["-A"];
 
                 if let Ok(mut args) = dia_args::parse_strings(raw_args.iter()) {
                     let case_insensitive = match args.get(ARG_CASE_INSENSITIVE) {
@@ -286,7 +287,7 @@ impl Env for Runtime<'_> {
                         _ => false
                     };
 
-                    let lines = match args.get::<u32>(&["-A"]) {
+                    let lines = match args.get::<u32>(ARG_LINES_AFTER) {
                         Ok(Some(n)) => n,
                         _ => 1
                     };
@@ -335,13 +336,21 @@ impl Env for Runtime<'_> {
                                     (end == haystack.len() - 1 || !haystack.chars().nth(end).unwrap().is_alphanumeric())
                             };
 
+                            let check_match = |mat : regex::Match, start: &usize, end : &usize| {
+                                if mat.start() >= *start && mat.start() < *end {
+                                    if !whole_words || is_word(mat.start(), mat.end()) {
+                                        return true;
+                                    }
+                                }
+
+                                false
+                            };
+
                             if let Some(mut next_mat) = mat_iter.next() {
                                 for (start, end, line) in linevec.iter() {
                                     while next_mat.start() < *end {
-                                        if next_mat.start() >= *start && next_mat.start() < *end {
-                                            if !whole_words || is_word(next_mat.start(), next_mat.end()) {
-                                                remaining = lines;
-                                            }
+                                        if check_match(next_mat, start, end) {
+                                            remaining = lines;
                                         }
 
                                         match mat_iter.next() {
@@ -352,10 +361,8 @@ impl Env for Runtime<'_> {
                                         }
                                     }
 
-                                    if next_mat.start() >= *start && next_mat.start() < *end {
-                                        if !whole_words || is_word(next_mat.start(), next_mat.end()) {
-                                            remaining = lines;
-                                        }
+                                    if check_match(next_mat, start, end) {
+                                        remaining = lines;
                                     }
 
                                     if remaining > 0 {
