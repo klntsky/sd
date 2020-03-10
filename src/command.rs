@@ -13,7 +13,8 @@ pub enum Command {
     PWD,
     EXIT,
     SET (String, String),
-    EXTERNAL (Vec<String>)
+    EXTERNAL (Vec<String>),
+    GREP (Vec<String>)
 }
 
 parser! {
@@ -59,6 +60,9 @@ parser! {
             ),
             literally("wc".to_string()).with(
                 many(string_token()).map(Command::WC)
+            ),
+            literally("grep".to_string()).with(
+                many(string_token()).map(Command::GREP)
             ),
             literally("pwd".to_string()).map(|_| Command::PWD),
             literally("exit".to_string()).map(|_| Command::EXIT),

@@ -11,6 +11,8 @@ use rustyline::error::ReadlineError;
 use std::env::{current_dir};
 use std::io::{BufRead,BufReader};
 use duct::cmd;
+use dia_args;
+use regex::RegexBuilder;
 
 /// Runtime that represents real-world
 pub struct Runtime<'a> {
@@ -269,6 +271,156 @@ impl Env for Runtime<'_> {
                     self.clear_stdin();
                 }
             }
+            GREP (raw_args) => {
+                const ARG_CASE_INSENSITIVE: &[&str] = &["-i"];
+                const ARG_WHOLE_WORDS: &[&str] = &["-w"];
+
+                if let Ok(mut args) = dia_args::parse_strings(raw_args.iter()) {
+                    let case_insensitive = match args.get(ARG_CASE_INSENSITIVE) {
+                        Ok(Some(true)) => true,
+                        _ => false
+                    };
+
+                    let whole_words = match args.get(ARG_WHOLE_WORDS) {
+                        Ok(Some(true)) => true,
+                        _ => false
+                    };
+
+                    let lines = match args.get::<u32>(&["-A"]) {
+                        Ok(Some(n)) => n,
+                        _ => 1
+                    };
+
+                    let other_args = args.take_args();
+
+                    let stdin = String::from_utf8(self.stdin.clone()).ok();
+                    self.clear_stdin();
+
+                    let mut process_regexps = |needle : String, haystack : String| {
+                        let regexp = RegexBuilder::new(&needle)
+                            .case_insensitive(case_insensitive)
+                            .multi_line(true)
+                            .build();
+
+                        if let Ok(rx) = regexp {
+                            let mut remaining = 0;
+                            let mut line_start = 0;
+                            let mut chars_iter = haystack.char_indices();
+                            let mut mat_iter = rx.find_iter(haystack.as_str());
+                            let mut linevec = vec![];
+
+                            let mut tmp = String::new();
+                            let mut last_ix = 0;
+
+                            while let Some((ix, chr)) = chars_iter.next() {
+                                last_ix = ix;
+
+                                if chr == '\n' {
+                                    tmp.push(chr);
+                                    linevec.push((line_start, ix, tmp.clone()));
+                                    tmp = String::new();
+                                    line_start = ix + 1;
+                                } else {
+                                    tmp.push(chr);
+                                }
+                            }
+
+                            if line_start + 1 != last_ix {
+                                linevec.push((line_start, last_ix, tmp.clone()));
+                            }
+
+                            // Check if there is a word between start and end indices.
+                            let is_word = |start, end| {
+                                (start == 0 || !haystack.chars().nth(start-1).unwrap().is_alphanumeric()) &&
+                                    (end == haystack.len() - 1 || !haystack.chars().nth(end).unwrap().is_alphanumeric())
+                            };
+
+                            if let Some(mut next_mat) = mat_iter.next() {
+                                for (start, end, line) in linevec.iter() {
+                                    while next_mat.start() < *end {
+                                        if next_mat.start() >= *start && next_mat.start() < *end {
+                                            if !whole_words || is_word(next_mat.start(), next_mat.end()) {
+                                                remaining = lines;
+                                            }
+                                        }
+
+                                        match mat_iter.next() {
+                                            Some(next_next_mat) => {
+                                                next_mat = next_next_mat;
+                                            },
+                                            _ => break
+                                        }
+                                    }
+
+                                    if next_mat.start() >= *start && next_mat.start() < *end {
+                                        if !whole_words || is_word(next_mat.start(), next_mat.end()) {
+                                            remaining = lines;
+                                        }
+                                    }
+
+                                    if remaining > 0 {
+                                        self.stdin.extend(line.as_bytes().to_vec());
+                                        remaining -= 1;
+                                    }
+                                }
+                            } else {
+                                // no matches
+                            }
+
+                        } else {
+                            self.stdin = "grep: incorrect regexp! see https://docs.rs/regex/1.3.4/regex/#syntax".as_bytes().to_vec();
+                        }
+                    };
+
+                    match other_args {
+                        // from stdin
+                        Some(vec) if vec.len() == 1 => {
+                            let needle = (&vec[0]).to_string();
+                            if let Some(haystack) = stdin {
+                                process_regexps(needle, haystack);
+                            } else {
+                                self.stdin = "grep: stdin does not contain valid utf-8".as_bytes().to_vec();
+                            }
+                        }
+
+                        // from file
+                        Some(vec) if vec.len() == 2 => {
+                            let needle = &vec[0];
+                            let filename = &vec[1];
+
+                            if let Ok(mut file) = File::open(filename) {
+                                let mut haystack = String::new();
+                                match file.read_to_string(&mut haystack) {
+                                    Err(_) => {
+                                        self.stdin.extend("grep: Can't read file\n".as_bytes().to_vec());
+                                    }
+
+                                    Ok(_) => {
+                                        process_regexps(needle.to_string(), haystack);
+                                    }
+                                }
+                            } else {
+                                self.stdin.extend((
+                                    "grep: No such file: ".to_string() + filename + "\n"
+                                ).as_bytes().to_vec());
+                            }
+
+                        }
+
+                        _ => {
+                            self.stdin = (
+                                "grep: incorrect arguments!"
+                            ).as_bytes().to_vec();
+                        }
+                    }
+
+                } else {
+                    self.stdin = (
+                        "grep: Incorrect arguments!"
+                    ).as_bytes().to_vec();
+                }
+
+            }
         }
     }
 }
@@ -350,5 +502,29 @@ mod test {
             String::from_utf8(runtime.stdin.clone()).unwrap(),
             "\t2\t2\t4\n".to_string()
         );
+    }
+
+    #[test]
+    fn test_args () {
+        const ARG_CASE_INSENSITIVE: &[&str] = &["-i"];
+
+        if let Ok(args) = dia_args::parse_strings(["foo", "-i"].iter()) {
+            match args.get(ARG_CASE_INSENSITIVE) {
+                Ok(Some(true)) => {}
+                _ => panic!("fail")
+            }
+        } else {
+            panic!("Fail");
+        }
+
+        if let Ok(args) = dia_args::parse_strings(["foo"].iter()) {
+            match args.get::<bool>(ARG_CASE_INSENSITIVE) {
+                Ok(None) => {}
+                _ => panic!("fail")
+            }
+        } else {
+            panic!("Fail");
+        }
+
     }
 }
